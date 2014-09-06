@@ -5,11 +5,11 @@
  * Description: Customize WooCommerce without code! Easily change add to cart button text and more.
  * Author: SkyVerge
  * Author URI: http://www.skyverge.com
- * Version: 1.2.1
+ * Version: 2.0.0
  * Text Domain: wc-customizer
  * Domain Path: /languages/
  *
- * Copyright: (c) 2013 SkyVerge, Inc. (info@skyverge.com)
+ * Copyright: (c) 2013-2014 SkyVerge, Inc. (info@skyverge.com)
  *
  * License: GNU General Public License v3.0
  * License URI: http://www.gnu.org/licenses/gpl-3.0.html
@@ -17,7 +17,7 @@
  * @package   WC-Customizer
  * @author    SkyVerge
  * @category  Utility
- * @copyright Copyright (c) 2013, SkyVerge, Inc.
+ * @copyright Copyright (c) 2013-2014, SkyVerge, Inc.
  * @license   http://www.gnu.org/licenses/gpl-3.0.html GNU General Public License v3.0
  */
 
@@ -27,15 +27,27 @@ if ( ! defined( 'ABSPATH' ) ) exit; // Exit if accessed directly
 if ( ! in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins', get_option( 'active_plugins' ) ) ) )
 	return;
 
-// required compatibility class
-require_once( 'includes/class-wc-customizer-compatibility.php' );
+// WC version check
+if ( version_compare( get_option( 'woocommerce_db_version' ), '2.1', '<' ) ) {
 
-/**
- * The WC_Customizer global object
- * @name $wc_customizer
- * @global WC_Customizer $GLOBALS['wc_customizer']
- */
-$GLOBALS['wc_customizer'] = new WC_Customizer();
+	function woocommerce_customizer_outdated_version_notice() {
+
+		$message = sprintf(
+			__( '%sWooCommerce Customizer is inactive.%s This version requires WooCommerce 2.1 or newer. Please %supdate WooCommerce to version 2.1 or newer%s', 'woocommerce-customizer' ),
+			'<strong>',
+			'</strong>',
+			'<a href="' . admin_url( 'plugins.php' ) . '">',
+			'&nbsp;&raquo;</a>'
+		);
+
+		echo sprintf( '<div class="error"><p>%s</p></div>', $message );
+	}
+
+	add_action( 'admin_notices', 'woocommerce_customizer_outdated_version_notice' );
+
+	return;
+}
+
 
 /**
  * # WooCommerce Customizer Main Plugin Class
@@ -72,7 +84,10 @@ class WC_Customizer {
 
 
 	/** plugin version number */
-	const VERSION = '1.2.1';
+	const VERSION = '1.2.0.1';
+
+	/** @var \WC_Customizer_Settings instance */
+	public $settings;
 
 	/** var array the active filters */
 	public $filters;
@@ -81,7 +96,7 @@ class WC_Customizer {
 	/**
 	 * Initializes the plugin
 	 *
-	 * @since 1.0
+	 * @since 1.0.0
 	 */
 	public function __construct() {
 
@@ -91,8 +106,8 @@ class WC_Customizer {
 		// admin
 		if ( is_admin() && ! defined( 'DOING_AJAX' ) ) {
 
-			// include required files
-			$this->admin_includes();
+			// load settings page
+			add_filter( 'woocommerce_get_settings_pages', array( $this, 'add_settings_page' ) );
 
 			// add a 'Configure' link to the plugin action links
 			add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), array( $this, 'add_plugin_action_links' ) );
@@ -106,9 +121,23 @@ class WC_Customizer {
 
 
 	/**
+	 * Add settings page
+	 *
+	 * @since 2.0.0
+	 * @param array $settings
+	 * @return array
+	 */
+	public function add_settings_page( $settings ) {
+
+		$settings[] = require_once( 'includes/class-wc-customizer-settings.php' );
+		return $settings;
+	}
+
+
+	/**
 	 * Load customizations after WC is loaded so the version can be checked
 	 *
-	 * @since 1.2
+	 * @since 1.2.0
 	 */
 	public function load_customizations() {
 
@@ -121,7 +150,7 @@ class WC_Customizer {
 			foreach ( $this->filters as $filter_name => $filter_value ) {
 
 				// WC 2.1 changed the add to cart text filter signatures so conditionally add the new filters
-				if ( false !== strpos( $filter_name, 'add_to_cart_text' ) && WC_Customizer_Compatibility::is_wc_version_gte_2_1() ) {
+				if ( false !== strpos( $filter_name, 'add_to_cart_text' ) ) {
 
 					if ( $filter_name == 'single_add_to_cart_text' ) {
 
@@ -137,35 +166,19 @@ class WC_Customizer {
 					add_filter( $filter_name, array( $this, 'customize' ) );
 				}
 			}
-
-				// for use some day, in a galaxy far, far away, when WP has greater 5.3 adoption
-			// add_filter( $filter_name, function() use ( $filter_value ) { return $filter_value; } );
 		}
-	}
-
-
-	/**
-	 * Include required admin files
-	 *
-	 * @since 1.1
-	 */
-	private function admin_includes() {
-
-		// admin UI
-		require( 'includes/class-wc-customizer-admin.php' );
-		$this->admin = new WC_Customizer_Admin();
 	}
 
 
 	/**
 	 * Handle localization, WPML compatible
 	 *
-	 * @since 1.1
+	 * @since 1.1.0
 	 */
 	public function load_translation() {
 
 		// localization in the init action for WPML support
-		load_plugin_textdomain( 'wc-customizer', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
+		load_plugin_textdomain( 'woocommerce-customizer', false, dirname( plugin_basename( __FILE__ ) ) . '/i18n/languages' );
 	}
 
 
@@ -175,7 +188,7 @@ class WC_Customizer {
 	/**
 	 * Add hook to selected filters
 	 *
-	 * @since 1.0
+	 * @since 1.0.0
 	 * @return string $filter_value value to use for selected hook
 	 */
 	public function customize() {
@@ -183,7 +196,16 @@ class WC_Customizer {
 		$current_filter = current_filter();
 
 		if ( isset( $this->filters[ $current_filter ] ) ) {
-			return $this->filters[ $current_filter ];
+
+			if ( 'customizer_true' === $this->filters[ $current_filter] || 'customizer_true' === $this->filters[ $current_filter] ) {
+
+				// helper to return a pure boolean value
+				return 'customizer_true' === $this->filters[ $current_filter ];
+
+			} else {
+
+				return $this->filters[ $current_filter ];
+			}
 		}
 
 		// no need to return a value passed in, because if a filter is set, it's designed to only return that value
@@ -191,11 +213,9 @@ class WC_Customizer {
 
 
 	/**
-	 * Apply the single add to cart button text customization in WC 2.1+
+	 * Apply the single add to cart button text customization
 	 *
-	 * The filter signature changed from `single_add_to_cart_text` to `woocommerce_product_single_add_to_cart_text`
-	 *
-	 * @since 1.2
+	 * @since 1.2.0
 	 */
 	public function customize_single_add_to_cart_text() {
 
@@ -204,14 +224,9 @@ class WC_Customizer {
 
 
 	/**
-	 * Apply the shop loop add to cart button text customization in WC 2.1+
+	 * Apply the shop loop add to cart button text customization
 	 *
-	 * The filter signature changed from `add_to_cart_text|{type}_add_to_cart_text` to `woocommerce_product_add_to_cart_text`
-	 *
-	 * This is sort of a hack but prevents a major refactoring and maintains backwards compatibility until WC 2.1+ can
-	 * be required
-	 *
-	 * @since 1.2
+	 * @since 1.2.0
 	 * @param string $text add to cart text
 	 * @param WC_Product $product product object
 	 * @return string modified add to cart text
@@ -256,16 +271,16 @@ class WC_Customizer {
 	 * Return the plugin action links.  This will only be called if the plugin
 	 * is active.
 	 *
-	 * @since 1.0
+	 * @since 1.0.0
 	 * @param array $actions associative array of action names to anchor tags
 	 * @return array associative array of plugin action links
 	 */
 	public function add_plugin_action_links( $actions ) {
 
 		$custom_actions = array(
-			'configure' => sprintf( '<a href="%s">%s</a>', admin_url( 'admin.php?page=wc_customizer' ), __( 'Configure', 'wc-customizer' ) ),
-			'faq'       => sprintf( '<a href="%s">%s</a>', 'http://wordpress.org/plugins/woocommerce-customizer/faq/', __( 'FAQ', 'wc-customizer' ) ),
-			'support'   => sprintf( '<a href="%s">%s</a>', 'http://wordpress.org/support/plugin/woocommerce-customizer', __( 'Support', 'wc-customizer' ) ),
+			'configure' => sprintf( '<a href="%s">%s</a>', admin_url( 'admin.php?page=wc-settings&tab=customizer&section=shop_loop' ), __( 'Configure', 'woocommerce-customizer' ) ),
+			'faq'       => sprintf( '<a href="%s">%s</a>', 'http://wordpress.org/plugins/woocommerce-customizer/faq/', __( 'FAQ', 'woocommerce-customizer' ) ),
+			'support'   => sprintf( '<a href="%s">%s</a>', 'http://wordpress.org/support/plugin/woocommerce-customizer', __( 'Support', 'woocommerce-customizer' ) ),
 		);
 
 		// add the links to the front of the actions list
@@ -279,7 +294,7 @@ class WC_Customizer {
 	/**
 	 * Run every time.  Used since the activation hook is not executed when updating a plugin
 	 *
-	 * @since 1.1
+	 * @since 1.1.0
 	 */
 	private function install() {
 
@@ -302,7 +317,7 @@ class WC_Customizer {
 	/**
 	 * Perform any version-related changes.
 	 *
-	 * @since 1.1
+	 * @since 1.1.0
 	 * @param int $installed_version the currently installed version of the plugin
 	 */
 	private function upgrade( $installed_version ) {
@@ -312,4 +327,12 @@ class WC_Customizer {
 	}
 
 
-} // end \WC_Customizer
+}
+
+
+/**
+ * The WC_Customizer global object
+ * @name $wc_customizer
+ * @global WC_Customizer $GLOBALS['wc_customizer']
+ */
+$GLOBALS['wc_customizer'] = new WC_Customizer();
